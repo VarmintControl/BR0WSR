@@ -614,7 +614,7 @@
       homeEl.classList.remove('hidden')
       urlBar.value = ''
       if (typeof updateBookmarkBtn === 'function') updateBookmarkBtn(null)
-      setTimeout(() => homeInput.focus(), 50)
+      setTimeout(() => urlBar.focus(), 50)
     }
     renderTabs()
   }
@@ -766,7 +766,7 @@
 
   openNewTab()
   renderBookmarks()
-  setTimeout(() => homeInput.focus(), 100)
+  setTimeout(() => urlBar.focus(), 100)
 
   // ── Sidebar pin / hover ──────────────────────────────────────
   const sidebar          = document.getElementById('sidebar')
