@@ -74,6 +74,28 @@
     #shield-btn.protected { color: var(--green); text-shadow: 0 0 8px var(--green); border-color: var(--green); }
     #shield-btn.whitelisted { opacity: 0.4; color: #ff6b6b; text-shadow: none; border-color: var(--green3); }
 
+    #bookmark-btn {
+      height: 28px; padding: 0 8px; background: none;
+      border: 1px solid var(--green3); color: var(--muted);
+      font-size: 13px; cursor: pointer; flex-shrink: 0;
+      -webkit-app-region: no-drag; transition: all 0.1s;
+    }
+    #bookmark-btn:hover { border-color: var(--green); color: var(--green); box-shadow: var(--glow); }
+    #bookmark-btn.bookmarked { color: #ffd700; border-color: #ffd700; text-shadow: 0 0 8px #ffd700aa; }
+    #bookmark-btn.disabled { opacity: 0.2; pointer-events: none; }
+
+    #bookmarks-section { border-top: 1px solid var(--border); flex-shrink: 0; }
+    #bookmarks-header { padding: 8px 10px 4px; font-size: 9px; color: var(--green3); letter-spacing: 0.15em; }
+    #bookmarks-list { overflow-y: auto; max-height: 160px; padding: 2px 0; }
+    #bookmarks-list::-webkit-scrollbar { width: 3px; }
+    #bookmarks-list::-webkit-scrollbar-thumb { background: var(--green3); }
+    .bookmark-item { display: flex; align-items: center; padding: 4px 10px; gap: 6px; font-size: 11px; border: 1px solid transparent; margin: 1px 6px; transition: all 0.1s; }
+    .bookmark-item:hover { border-color: var(--green3); background: var(--dim); }
+    .bookmark-title { flex: 1; color: var(--text); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; cursor: pointer; }
+    .bookmark-title:hover { color: var(--green); }
+    .bookmark-del { background: none; border: none; color: var(--muted); font-size: 9px; cursor: pointer; padding: 2px 4px; }
+    .bookmark-del:hover { color: #ff4444; }
+
     #url-bar {
       flex: 1;
       height: 30px;
@@ -455,6 +477,7 @@
 
 <div id="toolbar">
   <button id="shield-btn" title="Toggle ad blocking for this site">🛡️</button>
+  <button id="bookmark-btn" class="disabled" title="Bookmark this page (Cmd+D)">⭐</button>
   <input id="url-bar" type="text" placeholder="search or enter url..." autocomplete="off" spellcheck="false" />
 </div>
 
@@ -478,6 +501,11 @@
     <div id="tabs"></div>
     <div id="sidebar-footer">
       <button id="new-tab-btn">+ new_session</button>
+    </div>
+
+    <div id="bookmarks-section">
+      <div id="bookmarks-header">BOOKMARKS</div>
+      <div id="bookmarks-list"></div>
     </div>
 
     <div id="vpn-panel">
@@ -557,13 +585,14 @@
       if (id === activeId) {
         urlBar.value = e.url
         if (typeof updateShieldState === 'function') updateShieldState()
+        if (typeof updateBookmarkBtn === 'function') updateBookmarkBtn(e.url)
       }
     })
 
     wv.addEventListener('did-navigate-in-page', e => {
       if (!e.isMainFrame) return
       if (tabMeta[id]) tabMeta[id].url = e.url
-      if (id === activeId) urlBar.value = e.url
+      if (id === activeId) { urlBar.value = e.url; if (typeof updateBookmarkBtn === 'function') updateBookmarkBtn(e.url) }
     })
 
     tabMeta[id] = { title: 'New Tab', url: null, wvWrap, wv }
@@ -580,9 +609,11 @@
       homeEl.classList.add('hidden')
       meta.wvWrap.classList.add('active')
       urlBar.value = meta.url
+      if (typeof updateBookmarkBtn === 'function') updateBookmarkBtn(meta.url)
     } else {
       homeEl.classList.remove('hidden')
       urlBar.value = ''
+      if (typeof updateBookmarkBtn === 'function') updateBookmarkBtn(null)
       setTimeout(() => homeInput.focus(), 50)
     }
     renderTabs()
@@ -662,6 +693,7 @@
   document.addEventListener('keydown', e => {
     if ((e.metaKey || e.ctrlKey) && e.key === 'n') { openNewTab(); e.preventDefault() }
     if ((e.metaKey || e.ctrlKey) && e.key === 'x') { closeTab(activeId); e.preventDefault() }
+    if ((e.metaKey || e.ctrlKey) && e.key === 'd') { if (typeof toggleBookmark === 'function') toggleBookmark(); e.preventDefault() }
     if ((e.metaKey || e.ctrlKey) && e.shiftKey && e.key === ']') {
       const ids = Object.keys(tabMeta).map(Number)
       if (ids.length > 1) { const idx = ids.indexOf(activeId); switchTab(ids[(idx + 1) % ids.length]) }
@@ -679,7 +711,61 @@
   })
 
   // ── Init ─────────────────────────────────────────────────────
+  // ── Bookmarks ─────────────────────────────────────────────────
+  const bookmarkBtn  = document.getElementById('bookmark-btn')
+  const bookmarkList = document.getElementById('bookmarks-list')
+
+  function loadBookmarks() { return JSON.parse(localStorage.getItem('br0wsr-bookmarks') || '[]') }
+  function saveBookmarks(bms) { localStorage.setItem('br0wsr-bookmarks', JSON.stringify(bms)) }
+
+  function updateBookmarkBtn(url) {
+    if (!url || url === 'about:blank') { bookmarkBtn.className = 'disabled'; return }
+    bookmarkBtn.classList.remove('disabled')
+    const saved = loadBookmarks().some(b => b.url === url)
+    bookmarkBtn.className = saved ? 'bookmarked' : ''
+  }
+
+  function toggleBookmark() {
+    const meta = tabMeta[activeId]
+    if (!meta || !meta.url) return
+    const bms = loadBookmarks()
+    const idx = bms.findIndex(b => b.url === meta.url)
+    if (idx >= 0) { bms.splice(idx, 1) } else { bms.push({ id: Date.now(), title: meta.title || meta.url, url: meta.url }) }
+    saveBookmarks(bms)
+    updateBookmarkBtn(meta.url)
+    renderBookmarks()
+  }
+
+  function renderBookmarks() {
+    const bms = loadBookmarks()
+    bookmarkList.innerHTML = ''
+    if (bms.length === 0) {
+      bookmarkList.innerHTML = '<div style="font-size:10px;color:var(--muted);padding:6px 10px;letter-spacing:0.1em">NO BOOKMARKS</div>'
+      return
+    }
+    bms.forEach(bm => {
+      const el = document.createElement('div')
+      el.className = 'bookmark-item'
+      el.innerHTML = `<span class="bookmark-title" title="${bm.url}">${bm.title}</span><button class="bookmark-del" data-id="${bm.id}">✕</button>`
+      el.querySelector('.bookmark-title').addEventListener('click', () => {
+        const meta = tabMeta[activeId]
+        if (meta) { meta.wv.src = bm.url; urlBar.value = bm.url; updateBookmarkBtn(bm.url) }
+      })
+      el.querySelector('.bookmark-del').addEventListener('click', e => {
+        e.stopPropagation()
+        saveBookmarks(loadBookmarks().filter(b => b.id !== bm.id))
+        renderBookmarks()
+        const meta = tabMeta[activeId]
+        if (meta) updateBookmarkBtn(meta.url)
+      })
+      bookmarkList.appendChild(el)
+    })
+  }
+
+  bookmarkBtn.addEventListener('click', toggleBookmark)
+
   openNewTab()
+  renderBookmarks()
   setTimeout(() => homeInput.focus(), 100)
 
   // ── Sidebar pin / hover ──────────────────────────────────────
