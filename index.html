@@ -505,7 +505,7 @@
       <div id="home-prompt">
         <input id="home-input" type="text" placeholder="query..." autocomplete="off" spellcheck="false" />
       </div>
-      <div id="home-hint">[ ENTER ] execute &nbsp;&nbsp; [ CMD+T ] new session &nbsp;&nbsp; [ CMD+W ] close</div>
+      <div id="home-hint">[ ENTER ] execute &nbsp;&nbsp; [ CMD+N ] new session &nbsp;&nbsp; [ CMD+X ] close &nbsp;&nbsp; [ CMD+SHIFT+] / [ ] switch tabs</div>
     </div>
     <!-- webview wrappers injected here by JS -->
   </div>
@@ -660,8 +660,18 @@
   newTabBtn.addEventListener('click', () => openNewTab())
 
   document.addEventListener('keydown', e => {
-    if ((e.metaKey || e.ctrlKey) && e.key === 't') { openNewTab(); e.preventDefault() }
-    if ((e.metaKey || e.ctrlKey) && e.key === 'w') { closeTab(activeId); e.preventDefault() }
+    if ((e.metaKey || e.ctrlKey) && e.key === 'n') { openNewTab(); e.preventDefault() }
+    if ((e.metaKey || e.ctrlKey) && e.key === 'x') { closeTab(activeId); e.preventDefault() }
+    if ((e.metaKey || e.ctrlKey) && e.shiftKey && e.key === ']') {
+      const ids = Object.keys(tabMeta).map(Number)
+      if (ids.length > 1) { const idx = ids.indexOf(activeId); switchTab(ids[(idx + 1) % ids.length]) }
+      e.preventDefault()
+    }
+    if ((e.metaKey || e.ctrlKey) && e.shiftKey && e.key === '[') {
+      const ids = Object.keys(tabMeta).map(Number)
+      if (ids.length > 1) { const idx = ids.indexOf(activeId); switchTab(ids[(idx - 1 + ids.length) % ids.length]) }
+      e.preventDefault()
+    }
     if ((e.metaKey || e.ctrlKey) && e.key === 'l') {
       const input = homeEl.classList.contains('hidden') ? urlBar : homeInput
       input.focus(); input.select(); e.preventDefault()
