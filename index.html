@@ -56,6 +56,24 @@
       pointer-events: none;
     }
 
+    #shield-btn {
+      width: 28px; height: 28px;
+      background: none;
+      border: 1px solid var(--green3);
+      color: var(--green);
+      font-size: 14px;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      -webkit-app-region: no-drag;
+      transition: all 0.15s;
+      flex-shrink: 0;
+    }
+    #shield-btn:hover { border-color: var(--green); box-shadow: var(--glow); }
+    #shield-btn.protected { color: var(--green); text-shadow: 0 0 8px var(--green); border-color: var(--green); }
+    #shield-btn.whitelisted { opacity: 0.4; color: #ff6b6b; text-shadow: none; border-color: var(--green3); }
+
     #url-bar {
       flex: 1;
       height: 30px;
@@ -238,6 +256,34 @@
     #vpn-disconnect-btn:hover { border-color: #ff4444; color: #ff4444; }
     #vpn-disconnect-btn.visible { display: block; }
 
+    #whitelist-info {
+      padding: 6px 10px;
+      font-size: 8px;
+      color: var(--muted);
+      letter-spacing: 0.05em;
+      border-top: 1px solid var(--border);
+    }
+
+    /* ── VPN PROVIDER SELECTOR ── */
+    #vpn-provider-row {
+      padding: 4px 6px;
+      border-bottom: 1px solid var(--border);
+    }
+    #vpn-provider-select {
+      width: 100%;
+      padding: 5px 8px;
+      background: #000;
+      border: 1px solid var(--green3);
+      color: var(--green);
+      font-family: var(--mono);
+      font-size: 10px;
+      cursor: pointer;
+      outline: none;
+      letter-spacing: 0.05em;
+    }
+    #vpn-provider-select:focus { border-color: var(--green); box-shadow: var(--glow); }
+    #vpn-provider-select option { background: #000; color: var(--green); }
+
     /* ── EDGE TRIGGER STRIP ── */
     #edge-trigger {
       position: absolute;
@@ -408,6 +454,7 @@
 </div>
 
 <div id="toolbar">
+  <button id="shield-btn" title="Toggle ad blocking for this site">🛡️</button>
   <input id="url-bar" type="text" placeholder="search or enter url..." autocomplete="off" spellcheck="false" />
 </div>
 
@@ -438,8 +485,12 @@
         <div id="vpn-dot"></div>
         // VPN &nbsp;<span id="vpn-status-text">OFFLINE</span>
       </div>
+      <div id="vpn-provider-row">
+        <select id="vpn-provider-select"><!-- filled by JS --></select>
+      </div>
       <div id="vpn-countries"><!-- filled by JS --></div>
       <button id="vpn-disconnect-btn">⏻ disconnect</button>
+      <div id="whitelist-info">YouTube, X, Reddit whitelisted by default</div>
     </div>
   </div>
 
@@ -503,7 +554,10 @@
 
     wv.addEventListener('did-navigate', e => {
       if (tabMeta[id]) tabMeta[id].url = e.url
-      if (id === activeId) urlBar.value = e.url
+      if (id === activeId) {
+        urlBar.value = e.url
+        if (typeof updateShieldState === 'function') updateShieldState()
+      }
     })
 
     wv.addEventListener('did-navigate-in-page', e => {
@@ -692,15 +746,29 @@
   applyPinState()
 
   // ── VPN ──────────────────────────────────────────────────────
-  const vpnDot        = document.getElementById('vpn-dot')
-  const vpnStatusText = document.getElementById('vpn-status-text')
-  const vpnCountriesEl= document.getElementById('vpn-countries')
-  const vpnDisconnBtn = document.getElementById('vpn-disconnect-btn')
+  const vpnDot          = document.getElementById('vpn-dot')
+  const vpnStatusText   = document.getElementById('vpn-status-text')
+  const vpnProviderSel  = document.getElementById('vpn-provider-select')
+  const vpnCountriesEl  = document.getElementById('vpn-countries')
+  const vpnDisconnBtn   = document.getElementById('vpn-disconnect-btn')
 
   let vpnActiveCode = localStorage.getItem('vpn-country') || null
   let vpnConnected  = false
 
   async function vpnInit() {
+    // Load providers
+    const providers = await window.browser.vpn.providers()
+    const currentProvider = await window.browser.vpn.getProvider()
+    vpnProviderSel.innerHTML = ''
+    for (const p of providers) {
+      const opt = document.createElement('option')
+      opt.value = p.id
+      opt.textContent = `${p.icon} ${p.name}`
+      if (p.id === currentProvider) opt.selected = true
+      vpnProviderSel.appendChild(opt)
+    }
+
+    // Load countries
     const countries = await window.browser.vpn.countries()
     vpnCountriesEl.innerHTML = ''
     for (const c of countries) {
@@ -717,6 +785,11 @@
     }
     vpnPollStatus()
   }
+
+  vpnProviderSel.addEventListener('change', async () => {
+    await window.browser.vpn.setProvider(vpnProviderSel.value)
+    vpnPollStatus()
+  })
 
   async function vpnSelectCountry(code) {
     vpnActiveCode = code
@@ -756,6 +829,49 @@
 
   vpnInit()
   setInterval(vpnPollStatus, 4000)
+
+  // ── SHIELD BUTTON (ad blocker whitelist) ────────────────────
+  const shieldBtn = document.getElementById('shield-btn')
+
+  function getCurrentDomain() {
+    const meta = tabMeta[activeId]
+    if (!meta || !meta.url) return null
+    try {
+      return new URL(meta.url).hostname
+    } catch { return null }
+  }
+
+  async function updateShieldState() {
+    const domain = getCurrentDomain()
+    if (!domain) {
+      shieldBtn.className = ''
+      return
+    }
+    const whitelisted = await window.browser.blocker.isWhitelisted(domain)
+    shieldBtn.className = whitelisted ? 'whitelisted' : 'protected'
+  }
+
+  shieldBtn.addEventListener('click', async () => {
+    const domain = getCurrentDomain()
+    if (!domain) return
+    const whitelisted = await window.browser.blocker.isWhitelisted(domain)
+    if (whitelisted) {
+      await window.browser.blocker.removeSite(domain)
+    } else {
+      await window.browser.blocker.addSite(domain)
+    }
+    // Reload current webview
+    const meta = tabMeta[activeId]
+    if (meta && meta.wv) meta.wv.reload()
+    updateShieldState()
+  })
+
+  // Update shield on navigation
+  const origSwitchTab = switchTab
+  switchTab = function(id) {
+    origSwitchTab(id)
+    updateShieldState()
+  }
 
   // ── LOCK SCREEN ──────────────────────────────────────────────
   const lockScreen   = document.getElementById('lock-screen')
