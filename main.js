@@ -179,24 +179,23 @@ app.whenReady().then(() => {
 
   win.loadFile('index.html')
 
-  // Whitelist intercept — must be registered BEFORE the blocker
-  session.defaultSession.webRequest.onBeforeRequest({ urls: ['<all_urls>'] }, (details, callback) => {
-    try {
-      const host = new URL(details.url).hostname
-      const isWhitelisted = DEFAULT_WHITELIST.some(d => host === d || host.endsWith('.' + d)) ||
-        [...userWhitelist].some(d => host === d || host.endsWith('.' + d))
-      if (isWhitelisted) {
-        callback({ cancel: false })
-        return
-      }
-    } catch {}
-    callback({}) // let blocker handle it
-  })
-
   ElectronBlocker.fromPrebuiltAdsAndTracking(fetch).then(blocker => {
-    blocker.enableBlockingInSession(session.defaultSession)
+    // Single webRequest handler: whitelist passes through, everything else checked by blocker
+    session.defaultSession.webRequest.onBeforeRequest({ urls: ['<all_urls>'] }, (details, callback) => {
+      try {
+        const host = new URL(details.url).hostname
+        const isWhitelisted =
+          DEFAULT_WHITELIST.some(d => host === d || host.endsWith('.' + d)) ||
+          [...userWhitelist].some(d => host === d || host.endsWith('.' + d))
+        if (isWhitelisted) { callback({ cancel: false }); return }
+        const { match } = blocker.match({ type: 'main_frame', url: details.url, originUrl: details.referrer || '' })
+        callback({ cancel: !!match })
+      } catch {
+        callback({ cancel: false })
+      }
+    })
     app.on('session-created', s => blocker.enableBlockingInSession(s))
-    console.log('[blocker] active')
+    console.log('[blocker] active with whitelist support')
   }).catch(err => console.error('[blocker] error:', err))
 })
 
