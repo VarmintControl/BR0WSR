@@ -749,7 +749,7 @@
       el.innerHTML = `<span class="bookmark-title" title="${bm.url}">${bm.title}</span><button class="bookmark-del" data-id="${bm.id}">✕</button>`
       el.querySelector('.bookmark-title').addEventListener('click', () => {
         const meta = tabMeta[activeId]
-        if (meta) { meta.wv.src = bm.url; urlBar.value = bm.url; updateBookmarkBtn(bm.url) }
+        if (meta) { urlBar.value = bm.url; navigate(bm.url) }
       })
       el.querySelector('.bookmark-del').addEventListener('click', e => {
         e.stopPropagation()
